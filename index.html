@@ -707,6 +707,7 @@ button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;s
 #toast{position:absolute;left:50%;bottom:12px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;z-index:1100;max-width:90%;background:var(--bar);color:var(--bar-fg);padding:10px 14px;border-radius:12px;transition:.2s;text-align:center}
 #elev{position:relative;flex:none;height:140px;background:var(--panel);border-top:1px solid var(--line);z-index:10}
 #elevC{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#elevA{position:absolute;left:10px;top:20px;right:10px;font-size:12px;color:var(--fg);pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #elevT{position:absolute;left:10px;top:5px;right:10px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #toast.show{opacity:1;transform:translateX(-50%)}
 #sheet{max-height:46dvh;overflow-y:auto;background:var(--panel);border-top:1px solid var(--line);padding:6px max(12px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:6px;z-index:10}
@@ -801,11 +802,11 @@ button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;s
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 15</small>
+    <small style="color:var(--muted)">Versión 16</small>
   </div>
   <div id="toast" role="status"></div>
 </main>
-<div id="elev" hidden><canvas id="elevC"></canvas><div id="elevT"></div></div>
+<div id="elev" hidden><canvas id="elevC"></canvas><div id="elevT"></div><div id="elevA"></div></div>
 <section id="sheet" class="min">
   <div id="sHead">
     <div class="ti"><span id="tName">Sin track</span><span id="tStat"></span></div>
@@ -1911,7 +1912,7 @@ function openLayers(){
   for(const r of body.querySelectorAll('input')) r.onchange=()=>{setBase(r.value);m.close();};
 }
 
-let elevOn=false,elevCur=-1,elevSer=null,elevTimer=0;
+let elevOn=false,elevCur=-1,elevSer=null,elevTimer=0,elevAddrTimer=0,elevAddr={i:-1,txt:''};
 const gElev=L.layerGroup().addTo(map);
 function elevSeries(t){
   const P=t.pts,n=P.length;
@@ -1972,6 +1973,7 @@ function drawElev(){
   const fg=col('--fg'),muted=col('--muted'),line=col('--line'),acc=col('--accent');
   const t=activeTrack();
   const T=$('elevT');
+  $('elevA').textContent='';
   elevSer=t&&t.visible!==false?elevSeries(t):null;
   const ser=elevSer;
   ctx.font='11px -apple-system,system-ui,sans-serif';
@@ -1983,10 +1985,11 @@ function drawElev(){
   const st=stats(t);
   if(elevCur<0||elevCur>=n) T.textContent=fmtKm(total)+' · +'+Math.round(st.up)+' m · −'+Math.round(st.down)+' m · '+Math.round(mn)+'–'+Math.round(mx)+' m';
   else T.textContent='km '+(d[elevCur]/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+' · '+Math.round(e[elevCur])+' m · pendiente '+elevSlope(ser,elevCur).toLocaleString('es-ES',{maximumFractionDigits:0})+' %';
+  if(elevCur>=0) $('elevA').textContent=elevAddr.i===elevCur?'📍 '+elevAddr.txt:'Buscando lugar…';
   let lo=mn,hi=mx;
   if(hi-lo<20){const c=(hi+lo)/2;lo=c-10;hi=c+10;}
   const pad=(hi-lo)*0.08;lo-=pad;hi+=pad;
-  const L0=36,R0=8,T0=24,B0=16;
+  const L0=36,R0=8,T0=38,B0=16;
   const pw=W-L0-R0,ph=H-T0-B0;
   const X=m=>L0+m/total*pw,Y=v=>T0+(1-(v-lo)/(hi-lo))*ph;
   ctx.lineWidth=1;ctx.strokeStyle=line;ctx.fillStyle=muted;ctx.textBaseline='middle';ctx.textAlign='right';
@@ -2036,6 +2039,16 @@ function elevPointer(ev){
   }
   clearTimeout(elevTimer);
   drawElev();
+  clearTimeout(elevAddrTimer);
+  elevAddrTimer=setTimeout(()=>elevAddrFetch(lo),450);
+}
+async function elevAddrFetch(i){
+  const t=activeTrack();
+  if(!t||!t.pts[i]) return;
+  const lat=Math.round(t.pts[i][0]*1e4)/1e4,lon=Math.round(t.pts[i][1]*1e4)/1e4;
+  let txt;
+  try{txt=await addrOf(lat,lon);}catch(e){txt='sin conexión';}
+  if(elevCur===i){elevAddr={i,txt};drawElev();}
 }
 function elevRelease(){
   clearTimeout(elevTimer);
