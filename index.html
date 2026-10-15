@@ -717,7 +717,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 #seg button{min-height:40px;border-radius:9px;font-weight:600;color:var(--muted)}
 #seg button.on{background:var(--panel);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
 #seg button[data-mode="add"].on,#seg button[data-mode="move"].on{background:var(--accent);color:var(--accent-fg)}
-#slot{min-height:44px;display:flex;align-items:center}
+#slot{min-height:44px;display:flex;flex-direction:column;justify-content:center;gap:4px}
+#routeBar{display:flex;gap:6px;align-items:center}
+#rtProf{min-height:38px;border-radius:19px;border:0;background:var(--chip);padding:0 12px;font-weight:600;font-size:14px;max-width:60%}
+#rtTog.on{background:var(--accent);color:var(--accent-fg)}
 #hint{margin:0;color:var(--muted);font-size:13px;line-height:1.3}
 #ptPanel{display:flex;align-items:center;gap:6px;overflow-x:auto;width:100%;scrollbar-width:none}
 #ptPanel::-webkit-scrollbar,#chips::-webkit-scrollbar,#acts::-webkit-scrollbar{display:none}
@@ -788,6 +791,17 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button data-mode="add">Añadir</button>
   </div>
   <div id="slot">
+    <div id="routeBar" hidden>
+      <button class="pill" id="rtTog" aria-pressed="false"></button>
+      <select id="rtProf" aria-label="Tipo de ruta">
+        <option value="hiking-mountain">Senderos (montaña)</option>
+        <option value="trekking">Trekking (bici o a pie)</option>
+        <option value="mtb">Bici de montaña (MTB)</option>
+        <option value="gravel">Bici gravel</option>
+        <option value="fastbike">Bici de carretera</option>
+        <option value="shortest">Camino más corto</option>
+      </select>
+    </div>
     <p id="hint"></p>
     <div id="ptPanel" hidden>
       <span id="ptInfo"></span>
@@ -835,6 +849,7 @@ const LAYERS=[
 ];
 
 let S={tracks:[],activeId:null,seq:1};
+const route={on:false,profile:'hiking-mountain',busy:false};
 let sel=null,mode='view',dragging=false,suppress=false,tooMany=false,baseId='topo',baseLayer=null,lineRaf=0;
 const undoStack=[],redoStack=[];
 const lineOf=new Map();
@@ -1128,6 +1143,7 @@ function renderHint(){
   else if(!t) s='Abre un GPX o crea un track nuevo.';
   else if(mode==='view') s='Toca un track para elegirlo. Pasa a Mover o Añadir para editar.';
   else if(mode==='move') s=tooMany?'Hay demasiados puntos a la vista: acerca el mapa para arrastrarlos, o toca la línea para elegir un punto.':'Arrastra un punto, o tócalo para elegirlo.';
+  else if(route.on) s='Toca el mapa: la ruta sigue caminos desde el último punto del track (necesita conexión).';
   else s='Toca el mapa: cerca de la línea inserta un punto; lejos, lo añade en el extremo más cercano.';
   h.textContent=s;h.hidden=!s;
 }
@@ -1148,6 +1164,12 @@ function renderSheet(){
     const a=b.dataset.act;
     b.disabled=a!=='new'&&!t||(a==='merge'&&S.tracks.length<2);
   }
+  $('routeBar').hidden=mode!=='add';
+  $('rtTog').textContent='Seguir caminos: '+(route.on?'Sí':'No');
+  $('rtTog').classList.toggle('on',route.on);
+  $('rtTog').setAttribute('aria-pressed',route.on?'true':'false');
+  $('rtProf').value=route.profile;
+  $('rtProf').disabled=!route.on;
   const pp=$('ptPanel');
   if(t&&sel!=null&&t.pts[sel]){
     let d=0;
@@ -1216,6 +1238,37 @@ function addPointAt(ll){
     }else if(cp.distanceTo(q[0])<cp.distanceTo(q[n-1])) t.pts.unshift(np);
     else t.pts.push(np);
   });
+}
+
+async function routeSeg(a,b,profile){
+  const ctl=new AbortController();
+  const to=setTimeout(()=>ctl.abort(),20000);
+  try{
+    const url='https://brouter.de/brouter?lonlats='+a[1]+','+a[0]+'|'+b[1]+','+b[0]+'&profile='+encodeURIComponent(profile)+'&alternativeidx=0&format=geojson';
+    const r=await fetch(url,{signal:ctl.signal});
+    if(!r.ok){let m='';try{m=(await r.text()).slice(0,80);}catch(e){}throw new Error(m||('error '+r.status));}
+    const j=await r.json();
+    const c=j.features[0].geometry.coordinates;
+    return c.map(q=>[q[1],q[0],q.length>2&&isFinite(+q[2])?+q[2]:null,null]);
+  }finally{clearTimeout(to);}
+}
+async function addRouted(ll){
+  const t=activeTrack();
+  if(!t||!t.pts.length){addPointAt(ll);return;}
+  const id=t.id,last=t.pts[t.pts.length-1];
+  route.busy=true;
+  toast('Calculando ruta…');
+  try{
+    const seg=await routeSeg(last,[ll.lat,ll.lng],route.profile);
+    seg.shift();
+    if(!seg.length) throw new Error('el punto está en el mismo sitio');
+    const cur=activeTrack();
+    if(!cur||cur.id!==id) return;
+    commit(()=>{cur.pts=cur.pts.concat(seg);});
+    toast('Ruta añadida: '+seg.length+' puntos');
+  }catch(e){
+    toast('No se pudo calcular la ruta ('+(e&&e.name==='AbortError'?'tiempo agotado':e.message)+'). Desactiva Seguir caminos para línea recta.');
+  }finally{route.busy=false;}
 }
 
 function deletePoint(){
@@ -1416,8 +1469,97 @@ function openLayers(){
   const body=document.createElement('div');
   body.className='cb';
   body.innerHTML=LAYERS.map(l=>'<label class="rd'+(l.id===baseId?' cur':'')+'"><input type="radio" name="bl" value="'+l.id+'"'+(l.id===baseId?' checked':'')+'>'+esc(l.name)+'</label>').join('');
-  const m=modal({title:'Mapa de fondo',body,actions:[{label:'Cerrar'}]});
+  const m=modal({title:'Mapa de fondo',body,actions:[{label:'Mapa sin conexión',run:()=>{setTimeout(openOffline,0);}},{label:'Cerrar'}]});
   for(const r of body.querySelectorAll('input')) r.onchange=()=>{setBase(r.value);m.close();};
+}
+
+const OFFLINE_OK=['mtn','ignbase','pnoa'];
+const TILE_CACHE='tiles-v1';
+const MAX_TILES=8000;
+function tileXY(lat,lon,z){
+  const n=2**z,r=Math.PI/180;
+  const x=Math.floor((lon+180)/360*n);
+  const y=Math.floor((1-Math.log(Math.tan(lat*r)+1/Math.cos(lat*r))/Math.PI)/2*n);
+  return [Math.max(0,Math.min(n-1,x)),Math.max(0,Math.min(n-1,y))];
+}
+function tileRanges(b,z0,z1){
+  const out=[];
+  for(let z=z0;z<=z1;z++){
+    const a=tileXY(b.getNorth(),b.getWest(),z),c=tileXY(b.getSouth(),b.getEast(),z);
+    out.push({z,x0:a[0],x1:c[0],y0:a[1],y1:c[1],n:(c[0]-a[0]+1)*(c[1]-a[1]+1)});
+  }
+  return out;
+}
+function tileUrlOf(def,z,x,y){return def.url.replace('{z}',z).replace('{x}',x).replace('{y}',y);}
+async function downloadTiles(def,ranges,onProg,signal){
+  const cache=await caches.open(TILE_CACHE);
+  const urls=[];
+  for(const r of ranges) for(let x=r.x0;x<=r.x1;x++) for(let y=r.y0;y<=r.y1;y++) urls.push(tileUrlOf(def,r.z,x,y));
+  let i=0,done=0,fail=0;
+  const worker=async()=>{
+    while(i<urls.length&&!signal.aborted){
+      const u=urls[i++];
+      try{
+        if(!(await cache.match(u))) await cache.put(u,await fetch(u,{mode:'no-cors'}));
+      }catch(e){fail++;}
+      done++;onProg(done,urls.length,fail);
+    }
+  };
+  await Promise.all(Array.from({length:6},worker));
+  return {done,fail,total:urls.length};
+}
+let dlAbort=null;
+function openOffline(){
+  if(!window.caches){toast('La descarga necesita abrir la app desde una dirección https');return;}
+  const def=LAYERS.find(l=>l.id===baseId);
+  const body=document.createElement('div');
+  body.className='cb';
+  if(!OFFLINE_OK.includes(def.id)){
+    body.innerHTML='<p class="note">La descarga de zonas solo está permitida en las capas del IGN (MTN, Base y PNOA). OpenStreetMap, OpenTopoMap y Esri no la permiten.</p><button class="btn pri" id="ofSw">Usar IGN MTN</button><button class="btn danger" id="ofDel">Borrar mapas descargados</button>';
+    const m=modal({title:'Mapa sin conexión',body,actions:[{label:'Cerrar'}]});
+    body.querySelector('#ofSw').onclick=()=>{setBase('mtn');m.close();toast('Mueve el mapa a tu zona y vuelve a abrir Mapa sin conexión');};
+    body.querySelector('#ofDel').onclick=async()=>{await caches.delete(TILE_CACHE);toast('Mapas descargados borrados');m.close();};
+    return;
+  }
+  const z=Math.round(map.getZoom()),native=def.opt.maxNativeZoom||17;
+  const z0=Math.max(5,z-2),zTop=Math.min(native,17);
+  const zs=[];
+  for(let k=Math.min(z,zTop);k<=zTop;k++) zs.push(k);
+  const dflt=zs.includes(15)?15:zs[zs.length-1];
+  const b=map.getBounds();
+  body.innerHTML='<p class="note">Se descarga la zona que ves ahora en pantalla ('+esc(def.name)+'). Ajusta el mapa antes de empezar.</p><span class="lb">Detalle máximo (zoom)</span><select id="ofZ">'+zs.map(k=>'<option value="'+k+'"'+(k===dflt?' selected':'')+'>'+k+(k>=16?' (muy detallado)':k>=14?' (senderos)':'')+'</option>').join('')+'</select><p class="note" id="ofN"></p><progress id="ofP" value="0" max="1" hidden style="width:100%"></progress><div class="ca" style="justify-content:flex-start"><button class="btn pri" id="ofGo">Descargar</button><button class="btn" id="ofStop" hidden>Parar</button></div><button class="btn danger" id="ofDel">Borrar mapas descargados</button>';
+  const m=modal({title:'Mapa sin conexión',body,actions:[{label:'Cerrar',run:()=>{if(dlAbort) dlAbort.abort();}}]});
+  const info=()=>{
+    const zm=+body.querySelector('#ofZ').value;
+    const rg=tileRanges(b,z0,zm),tot=rg.reduce((s,r)=>s+r.n,0);
+    const mb=tot*0.03;
+    body.querySelector('#ofN').textContent=tot.toLocaleString('es-ES')+' teselas, unos '+mb.toLocaleString('es-ES',{maximumFractionDigits:mb<10?1:0})+' MB.'+(tot>MAX_TILES?' Es demasiado: acerca el mapa o baja el detalle (máximo '+MAX_TILES.toLocaleString('es-ES')+').':'');
+    body.querySelector('#ofGo').disabled=tot>MAX_TILES||tot===0;
+    return {rg,tot};
+  };
+  info();
+  body.querySelector('#ofZ').onchange=info;
+  body.querySelector('#ofGo').onclick=async()=>{
+    const {rg}=info();
+    dlAbort=new AbortController();
+    const prog=body.querySelector('#ofP');
+    prog.hidden=false;
+    body.querySelector('#ofGo').hidden=true;
+    body.querySelector('#ofStop').hidden=false;
+    body.querySelector('#ofStop').onclick=()=>dlAbort.abort();
+    body.querySelector('#ofZ').disabled=true;
+    const res=await downloadTiles(def,rg,(d,t,f)=>{
+      prog.max=t;prog.value=d;
+      body.querySelector('#ofN').textContent='Descargando '+d.toLocaleString('es-ES')+' de '+t.toLocaleString('es-ES')+(f?' · '+f+' fallos':'');
+    },dlAbort.signal);
+    const stopped=dlAbort.signal.aborted;
+    dlAbort=null;
+    body.querySelector('#ofN').textContent=(stopped?'Descarga detenida. ':'Listo. ')+res.done.toLocaleString('es-ES')+' teselas guardadas'+(res.fail?' · '+res.fail+' fallos':'')+'.';
+    body.querySelector('#ofStop').hidden=true;
+    body.querySelector('#ofGo').hidden=false;
+    body.querySelector('#ofZ').disabled=false;
+  };
+  body.querySelector('#ofDel').onclick=async()=>{await caches.delete(TILE_CACHE);toast('Mapas descargados borrados');m.close();};
 }
 
 function fileSafe(n){return (n||'tracks').replace(/[\\/:*?"<>|]+/g,'_').replace(/\.gpx$/i,'').trim()||'tracks';}
@@ -1502,7 +1644,11 @@ function locate(){
 
 map.on('click',e=>{
   if(suppress){suppress=false;return;}
-  if(mode==='add'){addPointAt(e.latlng);return;}
+  if(mode==='add'){
+    if(route.on){if(!route.busy) addRouted(e.latlng);}
+    else addPointAt(e.latlng);
+    return;
+  }
   if(mode==='move'){
     const t=activeTrack();
     if(!t) return;
@@ -1531,6 +1677,8 @@ $('file').addEventListener('change',async e=>{
   if(files.length) await importFiles(files);
 });
 $('bExport').onclick=openExport;
+$('rtTog').onclick=()=>{route.on=!route.on;lsSet('gpx-route',route.on?'1':'0');renderSheet();};
+$('rtProf').onchange=e=>{route.profile=e.target.value;lsSet('gpx-prof',route.profile);};
 $('bUndo').onclick=undo;
 $('bRedo').onclick=redo;
 $('bLayers').onclick=openLayers;
@@ -1578,6 +1726,9 @@ $('ptPanel').addEventListener('click',e=>{
 document.addEventListener('visibilitychange',()=>{if(document.hidden) saveNow();});
 
 async function boot(){
+  route.on=lsGet('gpx-route')==='1';
+  route.profile=lsGet('gpx-prof')||'hiking-mountain';
+  if('serviceWorker' in navigator&&location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
   setBase(lsGet('gpx-base')||'topo');
   let restored=false;
   try{
