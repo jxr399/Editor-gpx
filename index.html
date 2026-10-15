@@ -705,9 +705,14 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .btn.pri{background:var(--accent);color:var(--accent-fg)}
 .btn.danger{color:var(--danger)}
 #toast{position:absolute;left:50%;bottom:12px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;z-index:1100;max-width:90%;background:var(--bar);color:var(--bar-fg);padding:10px 14px;border-radius:12px;transition:.2s;text-align:center}
+#elev{position:absolute;left:max(8px,env(safe-area-inset-left,0px));right:max(8px,env(safe-area-inset-right,0px));bottom:24px;height:132px;z-index:1000;background:var(--panel);border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.4);opacity:.97}
+#elevC{position:absolute;inset:0;width:100%;height:100%;touch-action:none;border-radius:12px}
+#elevT{position:absolute;left:10px;top:5px;right:10px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#mapwrap.eo #toast{bottom:170px}
 #toast.show{opacity:1;transform:translateX(-50%)}
-#sheet{background:var(--panel);border-top:1px solid var(--line);padding:6px max(12px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:6px;z-index:10}
+#sheet{max-height:46dvh;overflow-y:auto;background:var(--panel);border-top:1px solid var(--line);padding:6px max(12px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:6px;z-index:10}
 #sHead{display:flex;align-items:center;gap:8px;min-height:44px}
+#sheet.min #sHead{min-height:38px}
 #sHead .ti{flex:1;min-width:0;display:flex;flex-direction:column}
 #tName{font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #tStat{color:var(--muted);font-size:13px;font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -788,6 +793,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="fab" id="bSearch" aria-label="Buscar lugar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
     <button class="fab" id="bLayers" aria-label="Mapa de fondo"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg></button>
     <button class="fab" id="bLocate" aria-label="Mi ubicación"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
+    <button class="fab" id="bElev" aria-label="Altimetría"><svg viewBox="0 0 24 24"><path d="m3 20 6-11 4 7 3-4 5 8Z"/></svg></button>
     <button class="fab" id="bFit" aria-label="Ver todo"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
   </div>
   <div id="empty">
@@ -796,11 +802,12 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 10</small>
+    <small style="color:var(--muted)">Versión 13</small>
   </div>
+  <div id="elev" hidden><canvas id="elevC"></canvas><div id="elevT"></div></div>
   <div id="toast" role="status"></div>
 </main>
-<section id="sheet">
+<section id="sheet" class="min">
   <div id="sHead">
     <div class="ti"><span id="tName">Sin track</span><span id="tStat"></span></div>
     <button class="ib" id="bCollapse" aria-label="Plegar panel"><svg viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg></button>
@@ -831,8 +838,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       <button class="pill" data-rt="up">Subir (antes)</button>
       <button class="pill" data-rt="down">Bajar (después)</button>
       <button class="pill danger" data-rt="del">Borrar</button>
+      <button class="pill" data-rt="addr">Direcciones</button>
       <button class="pill" data-rt="off">Cerrar</button>
     </div>
+    <p id="rtAddr" class="note" style="margin:0;font-size:13px;color:var(--muted)" hidden></p>
     <p id="hint"></p>
     <div id="ptPanel" hidden>
       <span id="ptInfo"></span>
@@ -848,6 +857,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <div id="acts">
       <button class="pill" data-act="open">Abrir GPX</button>
       <button class="pill" data-act="merge">Unir</button>
+      <button class="pill" data-act="mergeall">Unir todos</button>
       <button class="pill" data-act="reverse">Invertir</button>
       <button class="pill" data-act="simplify">Simplificar</button>
       <button class="pill" data-act="rename">Renombrar</button>
@@ -1208,6 +1218,7 @@ function renderHint(){
     else s='Toca el mapa para añadir puntos de paso. Toca un punto para subirlo, bajarlo o borrarlo; arrástralo para moverlo.';
   }
   else s='Toca el mapa: cerca de la línea inserta un punto; lejos, lo añade en el extremo más cercano.';
+  if($('sheet').classList.contains('min')&&mode==='route'&&t&&t.wp&&t.wp.length) s='';
   h.textContent=s;h.hidden=!s;
 }
 
@@ -1225,7 +1236,7 @@ function renderSheet(){
   for(const b of document.querySelectorAll('#seg button')) b.classList.toggle('on',b.dataset.mode===mode);
   for(const b of document.querySelectorAll('#acts [data-act]')){
     const a=b.dataset.act;
-    b.disabled=a!=='new'&&a!=='open'&&!t||(a==='merge'&&S.tracks.length<2);
+    b.disabled=a!=='new'&&a!=='open'&&!t||((a==='merge'||a==='mergeall')&&S.tracks.filter(x=>x.pts.length).length<2);
   }
   $('routeBar').hidden=mode!=='route';
   const rt=activeTrack();
@@ -1242,7 +1253,8 @@ function renderSheet(){
     for(let i=1;i<=sel;i++) d+=hav(rt.wp[i-1],rt.wp[i]);
     $('rtInfo').textContent='Punto '+(sel+1)+' de '+rt.wp.length;
     rp.hidden=false;
-  }else rp.hidden=true;
+    showAddr(rt.wp[sel],sel);
+  }else{rp.hidden=true;$('rtAddr').hidden=true;}
   $('rtTog').textContent='Seguir caminos: '+(route.on?'Sí':'No');
   $('rtTog').classList.toggle('on',route.on);
   $('rtTog').setAttribute('aria-pressed',route.on?'true':'false');
@@ -1259,6 +1271,7 @@ function renderSheet(){
   $('bUndo').disabled=!undoStack.length;
   $('bRedo').disabled=!redoStack.length;
   renderHint();
+  if(elevOn) drawElev();
 }
 
 function setMode(m){
@@ -1433,10 +1446,84 @@ function addWaypoint(ll){
     return t;
   });
 }
+const addrCache=new Map();
+let lastNet=0,addrTimer=0;
+function fmtAddr(j){
+  const a=j&&j.address||{};
+  const road=a.road||a.pedestrian||a.path||a.footway||a.cycleway||a.track||a.neighbourhood||'';
+  const place=a.village||a.town||a.city||a.municipality||a.hamlet||a.suburb||a.county||'';
+  if(road) return road+(a.house_number?' '+a.house_number:'')+(place?', '+place:'');
+  const nm=j&&j.name;
+  if(nm) return nm+(place&&place!==nm?', '+place:'');
+  if(place) return place;
+  return String(j&&j.display_name||'Sin dirección').split(',').slice(0,2).join(',').trim();
+}
+async function addrOf(lat,lon){
+  const k=lat.toFixed(5)+','+lon.toFixed(5);
+  if(addrCache.has(k)) return addrCache.get(k);
+  const wait=lastNet+1100-Date.now();
+  lastNet=Math.max(Date.now(),lastNet+1100);
+  if(wait>0) await sleep(wait);
+  const ctl=new AbortController();
+  const to=setTimeout(()=>ctl.abort(),12000);
+  try{
+    const r=await fetch('https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=18&addressdetails=1&accept-language=es&lat='+lat+'&lon='+lon,{signal:ctl.signal});
+    if(!r.ok) throw new Error('error '+r.status);
+    const txt=fmtAddr(await r.json());
+    addrCache.set(k,txt);
+    return txt;
+  }finally{clearTimeout(to);}
+}
+function showAddr(p,i){
+  const el=$('rtAddr');
+  const k=p[0].toFixed(5)+','+p[1].toFixed(5);
+  el.hidden=false;
+  if(addrCache.has(k)){el.textContent='📍 '+addrCache.get(k);return;}
+  el.textContent='Buscando dirección…';
+  clearTimeout(addrTimer);
+  addrTimer=setTimeout(async()=>{
+    try{
+      const txt=await addrOf(p[0],p[1]);
+      if(sel===i&&mode==='route') el.textContent='📍 '+txt;
+    }catch(e){
+      if(sel===i) el.textContent='No se pudo obtener la dirección (necesita conexión).';
+    }
+  },450);
+}
+function openAddrList(){
+  const t=activeTrack();
+  if(!t||!t.wp||!t.wp.length) return;
+  const body=document.createElement('div');
+  body.className='cb';
+  const items=t.wp.map((p,i)=>{
+    const b=document.createElement('button');
+    b.type='button';b.className='sqi';
+    b.innerHTML='<b></b><small></small>';
+    b.firstChild.textContent='Punto '+(i+1);
+    b.lastChild.textContent='Buscando…';
+    b.onclick=()=>{
+      m.close();
+      sel=i;
+      if(!map.getBounds().contains([p[0],p[1]])) map.panTo([p[0],p[1]]);
+      renderHandles();renderSheet();
+    };
+    body.append(b);
+    return b;
+  });
+  const m=modal({title:'Direcciones de los puntos',body,actions:[{label:'Cerrar'}]});
+  (async()=>{
+    for(let i=0;i<t.wp.length;i++){
+      if(!document.body.contains(body)) return;
+      try{items[i].lastChild.textContent=await addrOf(t.wp[i][0],t.wp[i][1]);}
+      catch(e){items[i].lastChild.textContent='No se pudo obtener (necesita conexión)';}
+    }
+  })();
+}
 function routeAction(a){
   const t=activeTrack(),i=sel;
   if(!t||!t.wp||i==null||!t.wp[i]) return;
   if(a==='off'){sel=null;renderHandles();renderSheet();return;}
+  if(a==='addr'){openAddrList();return;}
   if(a==='up'&&i===0){toast('Ya es el primer punto');return;}
   if(a==='down'&&i===t.wp.length-1){toast('Ya es el último punto');return;}
   commitRoute(()=>{
@@ -1634,6 +1721,94 @@ function openMerge(){
   });
 }
 
+function chainOrder(list,how){
+  if(how==='list') return list.map(t=>({t,rev:false}));
+  const rest=list.slice(),out=[{t:rest.shift(),rev:false}];
+  while(rest.length){
+    const l=out[out.length-1],pts=l.t.pts;
+    const e=l.rev?pts[0]:pts[pts.length-1];
+    let bi=-1,bd=Infinity,br=false;
+    rest.forEach((t,i)=>{
+      const ds=hav(e,t.pts[0]),de=hav(e,t.pts[t.pts.length-1]);
+      if(ds<bd){bd=ds;bi=i;br=false;}
+      if(de<bd){bd=de;bi=i;br=true;}
+    });
+    out.push({t:rest.splice(bi,1)[0],rev:br});
+  }
+  return out;
+}
+function orderGaps(order){
+  const g=[];
+  for(let i=1;i<order.length;i++){
+    const a=order[i-1],b=order[i];
+    const e=a.rev?a.t.pts[0]:a.t.pts[a.t.pts.length-1];
+    const st=b.rev?b.t.pts[b.t.pts.length-1]:b.t.pts[0];
+    g.push(hav(e,st));
+  }
+  return g;
+}
+async function doMergeAll(order,fill,name){
+  let pts=[],fails=0;
+  for(const {t,rev} of order){
+    const part=rev?reversePts(t.pts):t.pts.map(p=>p.slice());
+    if(pts.length&&part.length){
+      const last=pts[pts.length-1],first=part[0],g=hav(last,first);
+      if(g<0.5) part.shift();
+      else if(fill&&g>50){
+        try{
+          const seg=await routeSeg([last[0],last[1]],[first[0],first[1]],route.profile);
+          seg.shift();seg.pop();
+          pts=pts.concat(seg);
+        }catch(e){fails++;}
+      }
+    }
+    pts=pts.concat(part);
+  }
+  const ids=new Set(order.map(o=>o.t.id));
+  const firstT=order[0].t;
+  commit(()=>{
+    const m=makeTrack(name,pts);
+    m.color=firstT.color;
+    m.wpts=[].concat(...order.map(o=>o.t.wpts));
+    const idx=S.tracks.findIndex(x=>ids.has(x.id));
+    const rest=S.tracks.filter(x=>!ids.has(x.id));
+    rest.splice(Math.min(idx,rest.length),0,m);
+    S.tracks=rest;
+    S.activeId=m.id;
+  });
+  fitTracks([activeTrack()]);
+  toast('Unidos '+order.length+' tracks'+(fails?' · '+fails+(fails===1?' hueco':' huecos')+' en línea recta':''));
+}
+function openMergeAll(){
+  const list=S.tracks.filter(t=>t.pts.length);
+  if(list.length<2){toast('Necesitas al menos 2 tracks con puntos');return;}
+  const body=document.createElement('div');
+  body.className='cb';
+  body.innerHTML='<span class="lb">Orden</span><select id="maO"><option value="near">Encadenar por cercanía (recomendado)</option><option value="list">Como están en la lista</option></select><div id="maL" class="cb"></div><label class="rd"><input id="maF" type="checkbox" checked>Rellenar huecos de más de 50 m siguiendo caminos (necesita conexión)</label><span class="lb">Nombre del resultado</span><input id="maN" type="text">';
+  let order=[];
+  const refresh=ov=>{
+    order=chainOrder(list,ov.querySelector('#maO').value);
+    const gaps=orderGaps(order);
+    ov.querySelector('#maL').innerHTML=order.map((o,i)=>'<p class="note" style="margin:0">'+(i+1)+'. '+esc(short(o.t.name,28))+(o.rev?' (invertido)':'')+' · '+fmtKm(stats(o.t).dist)+(i<gaps.length?' → hueco '+fmtGap(gaps[i]):'')+'</p>').join('');
+  };
+  modal({
+    title:'Unir todos los tracks',body,
+    onOpen:ov=>{
+      refresh(ov);
+      ov.querySelector('#maN').value='Track unido';
+      ov.querySelector('#maO').onchange=()=>refresh(ov);
+    },
+    actions:[
+      {label:'Cancelar'},
+      {label:'Unir',cls:'pri',run:async ov=>{
+        const fill=ov.querySelector('#maF').checked;
+        if(fill) toast('Calculando huecos…');
+        await doMergeAll(order,fill,ov.querySelector('#maN').value.trim()||'Track unido');
+      }}
+    ]
+  });
+}
+
 function openSimplify(){
   const t=activeTrack();
   if(!t||t.pts.length<3){toast('Hacen falta al menos 3 puntos');return;}
@@ -1735,6 +1910,140 @@ function openLayers(){
   body.innerHTML=LAYERS.map(l=>'<label class="rd'+(l.id===baseId?' cur':'')+'"><input type="radio" name="bl" value="'+l.id+'"'+(l.id===baseId?' checked':'')+'>'+esc(l.name)+'</label>').join('');
   const m=modal({title:'Mapa de fondo',body,actions:[{label:'Mapa sin conexión',run:()=>{setTimeout(openOffline,0);}},{label:'Cerrar'}]});
   for(const r of body.querySelectorAll('input')) r.onchange=()=>{setBase(r.value);m.close();};
+}
+
+let elevOn=false,elevCur=-1,elevSer=null,elevTimer=0;
+const gElev=L.layerGroup().addTo(map);
+function elevSeries(t){
+  const P=t.pts,n=P.length;
+  if(n<2) return null;
+  const d=new Array(n),e=new Array(n);
+  let acc=0,known=0;
+  for(let i=0;i<n;i++){
+    if(i) acc+=hav(P[i-1],P[i]);
+    d[i]=acc;e[i]=P[i][2];
+    if(e[i]!=null) known++;
+  }
+  if(known<2||acc<=0) return {d,e:null,known,total:acc};
+  let first=e.findIndex(v=>v!=null),last=n-1;
+  while(e[last]==null) last--;
+  for(let i=0;i<first;i++) e[i]=e[first];
+  for(let i=last+1;i<n;i++) e[i]=e[last];
+  let a=first;
+  for(let i=first+1;i<=last;i++){
+    if(e[i]!=null){
+      for(let j=a+1;j<i;j++) e[j]=e[a]+(e[i]-e[a])*(d[j]-d[a])/((d[i]-d[a])||1);
+      a=i;
+    }
+  }
+  const r=Math.min(6,Math.floor(n/60)),sm=e.slice();
+  if(r>0) for(let i=0;i<n;i++){
+    let sum=0,c=0;
+    for(let j=Math.max(0,i-r);j<=Math.min(n-1,i+r);j++){sum+=e[j];c++;}
+    sm[i]=sum/c;
+  }
+  return {d,e:sm,known,total:acc};
+}
+function elevSlope(ser,i){
+  const n=ser.d.length;
+  let a=i,b=i;
+  while(a>0&&ser.d[i]-ser.d[a]<25) a--;
+  while(b<n-1&&ser.d[b]-ser.d[i]<25) b++;
+  const dd=ser.d[b]-ser.d[a];
+  return dd>0?(ser.e[b]-ser.e[a])/dd*100:0;
+}
+function niceStep(range,max){
+  const steps=[0.1,0.2,0.5,1,2,5,10,20,50,100,200];
+  for(const st of steps) if(range/st<=max) return st;
+  return 500;
+}
+function drawElev(){
+  const cv=$('elevC'),box=$('elev');
+  if(!elevOn||!cv) return;
+  const W=cv.clientWidth,H=cv.clientHeight;
+  if(W<20||H<20) return;
+  const dpr=window.devicePixelRatio||1;
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);
+  const ctx=cv.getContext('2d');
+  if(!ctx) return;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  const cs=getComputedStyle(document.documentElement);
+  const col=n=>cs.getPropertyValue(n).trim()||'#888';
+  const fg=col('--fg'),muted=col('--muted'),line=col('--line'),acc=col('--accent');
+  const t=activeTrack();
+  const T=$('elevT');
+  elevSer=t&&t.visible!==false?elevSeries(t):null;
+  const ser=elevSer;
+  ctx.font='11px -apple-system,system-ui,sans-serif';
+  if(!ser){T.textContent=t?'Este track tiene menos de 2 puntos':'Sin track';return;}
+  if(!ser.e){T.textContent='Este track no tiene altitud. Las rutas con «Seguir caminos» la incluyen.';return;}
+  const e=ser.e,d=ser.d,n=d.length,total=ser.total;
+  let mn=Infinity,mx=-Infinity;
+  for(const v of e){if(v<mn)mn=v;if(v>mx)mx=v;}
+  const st=stats(t);
+  if(elevCur<0||elevCur>=n) T.textContent=fmtKm(total)+' · +'+Math.round(st.up)+' m · −'+Math.round(st.down)+' m · '+Math.round(mn)+'–'+Math.round(mx)+' m';
+  else T.textContent='km '+(d[elevCur]/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+' · '+Math.round(e[elevCur])+' m · pendiente '+elevSlope(ser,elevCur).toLocaleString('es-ES',{maximumFractionDigits:0})+' %';
+  let lo=mn,hi=mx;
+  if(hi-lo<20){const c=(hi+lo)/2;lo=c-10;hi=c+10;}
+  const pad=(hi-lo)*0.08;lo-=pad;hi+=pad;
+  const L0=36,R0=8,T0=24,B0=16;
+  const pw=W-L0-R0,ph=H-T0-B0;
+  const X=m=>L0+m/total*pw,Y=v=>T0+(1-(v-lo)/(hi-lo))*ph;
+  ctx.lineWidth=1;ctx.strokeStyle=line;ctx.fillStyle=muted;ctx.textBaseline='middle';ctx.textAlign='right';
+  const ys=niceStep(hi-lo,3);
+  for(let v=Math.ceil(lo/ys)*ys;v<=hi;v+=ys){
+    const y=Math.round(Y(v))+0.5;
+    ctx.beginPath();ctx.moveTo(L0,y);ctx.lineTo(W-R0,y);ctx.stroke();
+    ctx.fillText(String(Math.round(v)),L0-4,y);
+  }
+  ctx.textAlign='center';ctx.textBaseline='top';
+  const xs=niceStep(total/1000,6)*1000;
+  for(let m=0;m<=total;m+=xs){
+    const x=X(m);
+    ctx.fillText((m/1000).toLocaleString('es-ES',{maximumFractionDigits:1}),Math.min(Math.max(x,L0+6),W-R0-6),H-B0+3);
+  }
+  const step=Math.max(1,Math.floor(n/(pw*1.5)));
+  ctx.beginPath();
+  ctx.moveTo(X(d[0]),Y(e[0]));
+  for(let i=step;i<n;i+=step) ctx.lineTo(X(d[i]),Y(e[i]));
+  ctx.lineTo(X(d[n-1]),Y(e[n-1]));
+  ctx.lineWidth=2;ctx.strokeStyle=acc;ctx.lineJoin='round';ctx.stroke();
+  ctx.lineTo(X(d[n-1]),T0+ph);ctx.lineTo(X(d[0]),T0+ph);ctx.closePath();
+  ctx.globalAlpha=0.22;ctx.fillStyle=acc;ctx.fill();ctx.globalAlpha=1;
+  if(elevCur>=0&&elevCur<n){
+    const x=X(d[elevCur]),y=Y(e[elevCur]);
+    ctx.strokeStyle=fg;ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(x,T0);ctx.lineTo(x,T0+ph);ctx.stroke();
+    ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fillStyle=acc;ctx.fill();ctx.lineWidth=2;ctx.strokeStyle=fg;ctx.stroke();
+  }
+}
+function elevPointer(ev){
+  const cv=$('elevC'),ser=elevSer;
+  if(!ser||!ser.e) return;
+  const r=cv.getBoundingClientRect();
+  const L0=36,R0=8,pw=r.width-L0-R0;
+  const m=Math.max(0,Math.min(1,(ev.clientX-r.left-L0)/pw))*ser.total;
+  let lo=0,hi=ser.d.length-1;
+  while(lo<hi){const mid=(lo+hi)>>1;if(ser.d[mid]<m) lo=mid+1; else hi=mid;}
+  elevCur=lo;
+  const t=activeTrack();
+  gElev.clearLayers();
+  if(t&&t.pts[lo]) L.circleMarker([t.pts[lo][0],t.pts[lo][1]],{radius:9,color:'#fff',weight:3,fillColor:'#1971c2',fillOpacity:1,interactive:false}).addTo(gElev);
+  clearTimeout(elevTimer);
+  drawElev();
+}
+function elevRelease(){
+  clearTimeout(elevTimer);
+  elevTimer=setTimeout(()=>{elevCur=-1;gElev.clearLayers();drawElev();},2500);
+}
+function setElev(on){
+  elevOn=on;
+  lsSet('gpx-elev',on?'1':'0');
+  $('elev').hidden=!on;
+  $('mapwrap').classList.toggle('eo',on);
+  elevCur=-1;gElev.clearLayers();
+  if(on) drawElev();
 }
 
 const gFind=L.layerGroup().addTo(map);
@@ -2022,10 +2331,17 @@ $('rtPanel').addEventListener('click',e=>{const b=e.target.closest('[data-rt]');
 $('bUndo').onclick=undo;
 $('bRedo').onclick=redo;
 $('bLayers').onclick=openLayers;
+$('bElev').onclick=()=>setElev(!elevOn);
+{const c=$('elevC');
+ c.addEventListener('pointerdown',e=>{try{c.setPointerCapture(e.pointerId);}catch(x){}elevPointer(e);});
+ c.addEventListener('pointermove',e=>{if(e.buttons||e.pointerType==='touch') elevPointer(e);});
+ c.addEventListener('pointerup',elevRelease);
+ c.addEventListener('pointercancel',elevRelease);}
+window.addEventListener('resize',()=>{if(elevOn) drawElev();});
 $('bSearch').onclick=openSearch;
 $('bLocate').onclick=locate;
 $('bFit').onclick=()=>{if(!fitTracks(S.tracks)) toast('No hay tracks que mostrar');};
-$('bCollapse').onclick=()=>{$('sheet').classList.toggle('min');};
+$('bCollapse').onclick=()=>{$('sheet').classList.toggle('min');lsSet('gpx-min',$('sheet').classList.contains('min')?'1':'0');renderHint();};
 $('seg').addEventListener('click',e=>{const b=e.target.closest('button');if(b) setMode(b.dataset.mode);});
 $('chips').addEventListener('click',e=>{
   const eye=e.target.closest('[data-eye]'),nm=e.target.closest('[data-sel]');
@@ -2045,6 +2361,7 @@ $('acts').addEventListener('click',e=>{
   switch(b.dataset.act){
     case 'open':$('file').click();break;
     case 'merge':openMerge();break;
+    case 'mergeall':openMergeAll();break;
     case 'reverse':reverseTrack(t);break;
     case 'simplify':openSimplify();break;
     case 'rename':openRename();break;
@@ -2069,6 +2386,8 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden) saveNow();
 
 async function boot(){
   route.on=lsGet('gpx-route')!=='0';
+  if(lsGet('gpx-min')==='0') $('sheet').classList.remove('min');
+  if(lsGet('gpx-elev')==='1') setElev(true);
   route.profile=lsGet('gpx-prof')||'hiking-mountain';
   if('serviceWorker' in navigator&&location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
   setBase(lsGet('gpx-base')||'topo');
