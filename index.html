@@ -687,7 +687,7 @@ button,select,input{font:inherit;color:inherit}
 button{cursor:pointer;border:0;background:none;padding:0}
 button:disabled{opacity:.4;cursor:default}
 button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+button svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
 #bar{display:flex;align-items:center;gap:6px;background:var(--bar);color:var(--bar-fg);padding:calc(6px + env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-right,0px)) 6px max(10px,env(safe-area-inset-left,0px))}
 #bar .sp{flex:1}
 .tb{height:40px;padding:0 14px;border-radius:10px;background:rgba(255,255,255,.12);font-weight:600}
@@ -705,10 +705,9 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .btn.pri{background:var(--accent);color:var(--accent-fg)}
 .btn.danger{color:var(--danger)}
 #toast{position:absolute;left:50%;bottom:12px;transform:translateX(-50%) translateY(20px);opacity:0;pointer-events:none;z-index:1100;max-width:90%;background:var(--bar);color:var(--bar-fg);padding:10px 14px;border-radius:12px;transition:.2s;text-align:center}
-#elev{position:absolute;left:max(8px,env(safe-area-inset-left,0px));right:max(8px,env(safe-area-inset-right,0px));bottom:24px;height:132px;z-index:1000;background:var(--panel);border-radius:12px;box-shadow:0 1px 8px rgba(0,0,0,.4);opacity:.97}
-#elevC{position:absolute;inset:0;width:100%;height:100%;touch-action:none;border-radius:12px}
+#elev{position:relative;flex:none;height:140px;background:var(--panel);border-top:1px solid var(--line);z-index:10}
+#elevC{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
 #elevT{position:absolute;left:10px;top:5px;right:10px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;pointer-events:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#mapwrap.eo #toast{bottom:170px}
 #toast.show{opacity:1;transform:translateX(-50%)}
 #sheet{max-height:46dvh;overflow-y:auto;background:var(--panel);border-top:1px solid var(--line);padding:6px max(12px,env(safe-area-inset-right,0px)) calc(8px + env(safe-area-inset-bottom,0px)) max(12px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:6px;z-index:10}
 #sHead{display:flex;align-items:center;gap:8px;min-height:44px}
@@ -802,11 +801,11 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 13</small>
+    <small style="color:var(--muted)">Versión 15</small>
   </div>
-  <div id="elev" hidden><canvas id="elevC"></canvas><div id="elevT"></div></div>
   <div id="toast" role="status"></div>
 </main>
+<div id="elev" hidden><canvas id="elevC"></canvas><div id="elevT"></div></div>
 <section id="sheet" class="min">
   <div id="sHead">
     <div class="ti"><span id="tName">Sin track</span><span id="tStat"></span></div>
@@ -2029,7 +2028,12 @@ function elevPointer(ev){
   elevCur=lo;
   const t=activeTrack();
   gElev.clearLayers();
-  if(t&&t.pts[lo]) L.circleMarker([t.pts[lo][0],t.pts[lo][1]],{radius:9,color:'#fff',weight:3,fillColor:'#1971c2',fillOpacity:1,interactive:false}).addTo(gElev);
+  if(t&&t.pts[lo]){
+    const ll=[t.pts[lo][0],t.pts[lo][1]];
+    if(!map.getBounds().pad(-0.12).contains(ll)) map.panTo(ll,{animate:false});
+    L.circleMarker(ll,{radius:15,color:'#1971c2',weight:2,fillColor:'#1971c2',fillOpacity:.25,interactive:false}).addTo(gElev);
+    L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#1971c2',fillOpacity:1,interactive:false}).addTo(gElev);
+  }
   clearTimeout(elevTimer);
   drawElev();
 }
@@ -2041,7 +2045,7 @@ function setElev(on){
   elevOn=on;
   lsSet('gpx-elev',on?'1':'0');
   $('elev').hidden=!on;
-  $('mapwrap').classList.toggle('eo',on);
+  setTimeout(()=>map.invalidateSize({pan:false}),60);
   elevCur=-1;gElev.clearLayers();
   if(on) drawElev();
 }
