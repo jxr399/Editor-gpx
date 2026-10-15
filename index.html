@@ -721,6 +721,11 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 #slot{min-height:44px;display:flex;flex-direction:column;justify-content:center;gap:4px}
 #routeBar{display:flex;gap:6px;align-items:center}
 #rtProf{min-height:38px;border-radius:19px;border:0;background:var(--chip);padding:0 12px;font-weight:600;font-size:14px;max-width:60%}
+#wpList{display:flex;gap:6px;overflow-x:auto;width:100%;scrollbar-width:none;align-items:center}
+#wpList::-webkit-scrollbar{display:none}
+.wpc{flex:none;min-width:40px;min-height:38px;padding:0 10px;border-radius:19px;background:var(--chip);font-weight:700;font-variant-numeric:tabular-nums}
+.wpc.on{background:var(--accent);color:var(--accent-fg)}
+#wpList .lbl{flex:none;font-size:13px;color:var(--muted);padding-right:2px}
 #rtPanel{display:flex;align-items:center;gap:6px;overflow-x:auto;width:100%;scrollbar-width:none}
 #rtPanel::-webkit-scrollbar{display:none}
 .wpm{background:none;border:0}
@@ -791,7 +796,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 8</small>
+    <small style="color:var(--muted)">Versión 9</small>
   </div>
   <div id="toast" role="status"></div>
 </main>
@@ -820,6 +825,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
       <button class="pill" id="rtConv" hidden>Convertir a ruta</button>
       <button class="pill" id="rtRecalc" hidden>Recalcular</button>
     </div>
+    <div id="wpList" hidden></div>
     <div id="rtPanel" hidden>
       <span id="rtInfo" style="font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;padding-right:4px"></span>
       <button class="pill" data-rt="up">Subir (antes)</button>
@@ -1225,6 +1231,11 @@ function renderSheet(){
   const rt=activeTrack();
   $('rtConv').hidden=!(rt&&rt.pts.length>1&&!rt.wp);
   $('rtRecalc').hidden=!(rt&&rt.wp&&rt.wp.length>1);
+  const wl=$('wpList');
+  if(mode==='route'&&rt&&rt.wp&&rt.wp.length){
+    wl.innerHTML='<span class="lbl">Puntos</span>'+rt.wp.map((_,i)=>'<button class="wpc'+(i===sel?' on':'')+'" data-wp="'+i+'">'+(i+1)+'</button>').join('');
+    wl.hidden=false;
+  }else wl.hidden=true;
   const rp=$('rtPanel');
   if(mode==='route'&&sel!=null&&rt&&rt.wp&&rt.wp[sel]){
     let d=0;
@@ -1415,9 +1426,10 @@ function addWaypoint(ll){
     const p=[ll.lat,ll.lng];
     if(t.wp.length>=2){
       const n=nearestSeg(t,ll);
-      if(n.i>=0&&n.d<=28){t.wp.splice(n.i+1,0,p);return t;}
+      if(n.i>=0&&n.d<=28){t.wp.splice(n.i+1,0,p);sel=n.i+1;return t;}
     }
     t.wp.push(p);
+    sel=t.wp.length-1;
     return t;
   });
 }
@@ -1941,6 +1953,16 @@ $('bExport').onclick=openExport;
 $('rtTog').onclick=()=>{route.on=!route.on;lsSet('gpx-route',route.on?'1':'0');modeChanged();};
 $('rtProf').onchange=e=>{route.profile=e.target.value;route.on=true;lsSet('gpx-prof',route.profile);lsSet('gpx-route','1');modeChanged();};
 $('rtConv').onclick=convertToRoute;
+$('wpList').addEventListener('click',e=>{
+  const b=e.target.closest('[data-wp]');
+  if(!b) return;
+  const t=activeTrack(),i=+b.dataset.wp;
+  if(!t||!t.wp||!t.wp[i]) return;
+  sel=i;
+  const p=t.wp[i];
+  if(!map.getBounds().contains([p[0],p[1]])) map.panTo([p[0],p[1]]);
+  renderHandles();renderSheet();
+});
 $('rtRecalc').onclick=modeChanged;
 $('rtPanel').addEventListener('click',e=>{const b=e.target.closest('[data-rt]');if(b) routeAction(b.dataset.rt);});
 $('bUndo').onclick=undo;
