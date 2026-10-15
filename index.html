@@ -748,7 +748,10 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 .cb{display:flex;flex-direction:column;gap:8px}
 .ca{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 .lb{font-size:13px;color:var(--muted);font-weight:600}
-.cb select,.cb input[type=text]{width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 10px}
+.sqi{display:flex;flex-direction:column;align-items:flex-start;text-align:left;width:100%;min-height:48px;padding:6px 12px;border-radius:12px;background:var(--chip)}
+.sqi b{font-size:15px}
+.sqi small{color:var(--muted);font-size:12px;line-height:1.3}
+.cb select,.cb input[type=text],.cb input[type=search]{width:100%;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 10px}
 .cb input[type=range]{width:100%;accent-color:var(--accent);min-height:36px}
 .rd{display:flex;gap:10px;align-items:center;min-height:44px;padding:0 4px}
 .rd input{width:20px;height:20px;accent-color:var(--accent)}
@@ -769,6 +772,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 <main id="mapwrap">
   <div id="map"></div>
   <div id="fabs">
+    <button class="fab" id="bSearch" aria-label="Buscar lugar"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg></button>
     <button class="fab" id="bLayers" aria-label="Mapa de fondo"><svg viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5 9-5Z"/><path d="m3 13 9 5 9-5"/></svg></button>
     <button class="fab" id="bLocate" aria-label="Mi ubicación"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>
     <button class="fab" id="bFit" aria-label="Ver todo"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
@@ -779,7 +783,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 5</small>
+    <small style="color:var(--muted)">Versión 7</small>
   </div>
   <div id="toast" role="status"></div>
 </main>
@@ -818,6 +822,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
   <div id="more">
     <div id="chips"></div>
     <div id="acts">
+      <button class="pill" data-act="open">Abrir GPX</button>
       <button class="pill" data-act="merge">Unir</button>
       <button class="pill" data-act="reverse">Invertir</button>
       <button class="pill" data-act="simplify">Simplificar</button>
@@ -829,7 +834,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     </div>
   </div>
 </section>
-<input id="file" type="file" multiple hidden>
+<input id="file" type="file" multiple style="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0;pointer-events:none" tabindex="-1" aria-hidden="true">
 <script>
 /* @preserve
  * Leaflet 1.9.4, a JS library for interactive maps. https://leafletjs.com
@@ -1166,7 +1171,7 @@ function renderSheet(){
   for(const b of document.querySelectorAll('#seg button')) b.classList.toggle('on',b.dataset.mode===mode);
   for(const b of document.querySelectorAll('#acts [data-act]')){
     const a=b.dataset.act;
-    b.disabled=a!=='new'&&!t||(a==='merge'&&S.tracks.length<2);
+    b.disabled=a!=='new'&&a!=='open'&&!t||(a==='merge'&&S.tracks.length<2);
   }
   $('routeBar').hidden=mode!=='add';
   $('rtTog').textContent='Seguir caminos: '+(route.on?'Sí':'No');
@@ -1476,6 +1481,60 @@ function openLayers(){
   for(const r of body.querySelectorAll('input')) r.onchange=()=>{setBase(r.value);m.close();};
 }
 
+const gFind=L.layerGroup().addTo(map);
+async function geocode(q){
+  const b=map.getBounds();
+  const ctl=new AbortController();
+  const to=setTimeout(()=>ctl.abort(),15000);
+  try{
+    const url='https://nominatim.openstreetmap.org/search?format=jsonv2&limit=10&accept-language=es&q='+encodeURIComponent(q)+'&viewbox='+[b.getWest(),b.getNorth(),b.getEast(),b.getSouth()].join(',');
+    const r=await fetch(url,{signal:ctl.signal});
+    if(!r.ok) throw new Error('error '+r.status);
+    return await r.json();
+  }finally{clearTimeout(to);}
+}
+function goToPlace(r){
+  gFind.clearLayers();
+  const ll=[+r.lat,+r.lon];
+  const title=r.name||String(r.display_name||'').split(',')[0];
+  const mk=L.circleMarker(ll,{radius:9,color:'#fff',weight:3,fillColor:'#e03131',fillOpacity:1,bubblingMouseEvents:false}).addTo(gFind);
+  mk.bindTooltip(title,{permanent:true,direction:'top',offset:[0,-10]});
+  mk.on('click',()=>gFind.clearLayers());
+  const bb=r.boundingbox;
+  if(bb&&bb.length===4) map.fitBounds([[+bb[0],+bb[2]],[+bb[1],+bb[3]]],{maxZoom:16,padding:[30,30]});
+  else map.setView(ll,15);
+}
+function openSearch(){
+  const body=document.createElement('div');
+  body.className='cb';
+  body.innerHTML='<form id="sqF" style="display:flex;gap:8px"><input id="sqQ" type="search" placeholder="Pueblo, monte, lugar…" autocomplete="off" autocapitalize="off" enterkeyhint="search" style="flex:1;min-width:0"><button class="btn pri" type="submit">Buscar</button></form><div id="sqR" class="cb"><p class="note">Necesita conexión. Busca pueblos, montes, refugios, fuentes y otros lugares de OpenStreetMap. Toca el pin rojo para quitarlo.</p></div>';
+  const m=modal({title:'Buscar lugar',body,actions:[{label:'Cerrar'}]});
+  const box=body.querySelector('#sqR'),inp=body.querySelector('#sqQ');
+  setTimeout(()=>{try{inp.focus();}catch(e){}},50);
+  body.querySelector('#sqF').onsubmit=async ev=>{
+    ev.preventDefault();
+    const q=inp.value.trim();
+    if(q.length<2) return;
+    box.innerHTML='<p class="note">Buscando…</p>';
+    let res;
+    try{res=await geocode(q);}
+    catch(e){box.innerHTML='<p class="note">No se pudo buscar ('+esc(e&&e.name==='AbortError'?'tiempo agotado':e.message)+'). Comprueba la conexión.</p>';return;}
+    if(!res.length){box.innerHTML='<p class="note">Sin resultados para «'+esc(q)+'».</p>';return;}
+    box.innerHTML='';
+    for(const r of res){
+      const parts=String(r.display_name||'').split(',').map(x=>x.trim());
+      const title=r.name||parts[0];
+      const b=document.createElement('button');
+      b.type='button';b.className='sqi';
+      b.innerHTML='<b></b><small></small>';
+      b.firstChild.textContent=title;
+      b.lastChild.textContent=(r.type?r.type.replace(/_/g,' ')+' · ':'')+parts.slice(r.name?1:1).join(', ').slice(0,90);
+      b.onclick=()=>{m.close();goToPlace(r);};
+      box.append(b);
+    }
+  };
+}
+
 const OFFLINE_OK=['mtn','ignbase','pnoa'];
 const TILE_CACHE='tiles-v1';
 const MAX_TILES=8000;
@@ -1629,6 +1688,7 @@ async function importFiles(files){
   if(added.length){
     commit(()=>{for(const t of added) S.tracks.push(t);S.activeId=added[0].id;});
     if(!fitTracks(added)) toast('El GPX solo tiene waypoints');
+    else toast('Abierto: '+added.length+(added.length===1?' track':' tracks'));
   }
   if(errs.length) toast(errs[0]);
 }
@@ -1636,13 +1696,23 @@ async function importFiles(files){
 function locate(){
   if(!navigator.geolocation){toast('Este navegador no tiene geolocalización');return;}
   toast('Buscando ubicación…');
-  navigator.geolocation.getCurrentPosition(pos=>{
+  const ok=pos=>{
     const ll=[pos.coords.latitude,pos.coords.longitude];
     gLoc.clearLayers();
     L.circle(ll,{radius:pos.coords.accuracy,color:'#1971c2',weight:1,fillOpacity:.12,interactive:false}).addTo(gLoc);
     L.circleMarker(ll,{radius:8,color:'#fff',weight:3,fillColor:'#1971c2',fillOpacity:1,interactive:false}).addTo(gLoc);
     map.setView(ll,Math.max(map.getZoom(),15));
-  },()=>toast('No se pudo obtener la ubicación'),{enableHighAccuracy:true,timeout:15000,maximumAge:30000});
+  };
+  const fail=err=>{
+    const c=err&&err.code;
+    if(c===1) toast('Permiso denegado. En Ajustes → Privacidad y seguridad → Localización → Safari, elige «Al usar la app» y activa la precisión. Luego recarga la página.');
+    else if(c===3) toast('La ubicación tarda demasiado. Prueba en un sitio abierto o con Wi-Fi activado.');
+    else toast('No se pudo obtener la ubicación. Comprueba que Localización está activada en Ajustes.');
+  };
+  navigator.geolocation.getCurrentPosition(ok,err=>{
+    if(err&&err.code===1){fail(err);return;}
+    navigator.geolocation.getCurrentPosition(ok,fail,{enableHighAccuracy:false,timeout:15000,maximumAge:120000});
+  },{enableHighAccuracy:true,timeout:8000,maximumAge:30000});
 }
 
 map.on('click',e=>{
@@ -1686,6 +1756,7 @@ $('rtProf').onchange=e=>{route.profile=e.target.value;route.on=true;lsSet('gpx-p
 $('bUndo').onclick=undo;
 $('bRedo').onclick=redo;
 $('bLayers').onclick=openLayers;
+$('bSearch').onclick=openSearch;
 $('bLocate').onclick=locate;
 $('bFit').onclick=()=>{if(!fitTracks(S.tracks)) toast('No hay tracks que mostrar');};
 $('bCollapse').onclick=()=>{$('sheet').classList.toggle('min');};
@@ -1706,6 +1777,7 @@ $('acts').addEventListener('click',e=>{
   if(!b||b.disabled) return;
   const t=activeTrack();
   switch(b.dataset.act){
+    case 'open':$('file').click();break;
     case 'merge':openMerge();break;
     case 'reverse':if(t) commit(()=>{t.pts=reversePts(t.pts);});break;
     case 'simplify':openSimplify();break;
