@@ -796,7 +796,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 9</small>
+    <small style="color:var(--muted)">Versión 10</small>
   </div>
   <div id="toast" role="status"></div>
 </main>
@@ -1446,11 +1446,45 @@ function routeAction(a){
     return t;
   });
 }
-function convertToRoute(){
+function simplifyToCount(pts,n){
+  const N=pts.length;
+  if(N<=n) return pts.map((_,i)=>i);
+  let latSum=0;
+  for(const p of pts) latSum+=p[0];
+  const kx=111320*Math.cos(latSum/N*Math.PI/180),ky=110540;
+  const X=pts.map(p=>p[1]*kx),Y=pts.map(p=>p[0]*ky);
+  const far=(s0,e0)=>{
+    const dx=X[e0]-X[s0],dy=Y[e0]-Y[s0],l2=dx*dx+dy*dy;
+    let md=-1,mi=-1;
+    for(let i=s0+1;i<e0;i++){
+      let d;
+      if(l2===0) d=Math.hypot(X[i]-X[s0],Y[i]-Y[s0]);
+      else{
+        const u=Math.max(0,Math.min(1,((X[i]-X[s0])*dx+(Y[i]-Y[s0])*dy)/l2));
+        d=Math.hypot(X[i]-(X[s0]+u*dx),Y[i]-(Y[s0]+u*dy));
+      }
+      if(d>md){md=d;mi=i;}
+    }
+    return {s:s0,e:e0,i:mi,d:md};
+  };
+  const keep=[0,N-1];
+  let cands=[far(0,N-1)];
+  while(keep.length<n){
+    let bi=-1;
+    cands.forEach((c,k)=>{if(c.i>0&&(bi<0||c.d>cands[bi].d)) bi=k;});
+    if(bi<0) break;
+    const c=cands.splice(bi,1)[0];
+    keep.push(c.i);
+    if(c.i-c.s>1) cands.push(far(c.s,c.i));
+    if(c.e-c.i>1) cands.push(far(c.i,c.e));
+  }
+  return keep.sort((a,b)=>a-b);
+}
+function convertToRoute(n){
   const t=activeTrack();
   if(!t||t.wp||t.pts.length<2) return;
-  let tol=2,idx=simplifyIdx(t.pts,tol);
-  while(idx.length>40&&tol<5000){tol*=1.6;idx=simplifyIdx(t.pts,tol);}
+  n=Math.max(2,Math.min(n||8,t.pts.length));
+  const idx=simplifyToCount(t.pts,n);
   commit(()=>{
     t.wp=idx.map(i=>[t.pts[i][0],t.pts[i][1]]);
     t.segs=[];
@@ -1461,6 +1495,26 @@ function convertToRoute(){
     rebuild(t);
   });
   toast('Convertido en '+idx.length+' puntos de ruta. Arrástralos o cámbialos de orden.');
+}
+function openConvert(){
+  const t=activeTrack();
+  if(!t||t.wp||t.pts.length<2) return;
+  const max=Math.min(60,t.pts.length);
+  const body=document.createElement('div');
+  body.className='cb';
+  body.innerHTML='<p class="note">Este track tiene '+t.pts.length.toLocaleString('es-ES')+' puntos. Elige cuántos puntos de paso quieres editar. La app conserva los que más cambian la forma de la ruta, siempre con el inicio y el final.</p><span class="lb">Puntos de paso: <b id="cvV"></b></span><input id="cvR" type="range" min="2" max="'+max+'" step="1" value="'+Math.min(8,max)+'"><p class="note">La forma del track no cambia hasta que muevas o borres un punto.</p>';
+  modal({
+    title:'Convertir a ruta',body,
+    onOpen:ov=>{
+      const r=ov.querySelector('#cvR'),v=ov.querySelector('#cvV');
+      const upd=()=>{v.textContent=r.value;};
+      upd();r.oninput=upd;
+    },
+    actions:[
+      {label:'Cancelar'},
+      {label:'Convertir',cls:'pri',run:ov=>{convertToRoute(+ov.querySelector('#cvR').value);}}
+    ]
+  });
 }
 function reverseTrack(t){
   if(!t) return;
@@ -1952,7 +2006,7 @@ $('file').addEventListener('change',async e=>{
 $('bExport').onclick=openExport;
 $('rtTog').onclick=()=>{route.on=!route.on;lsSet('gpx-route',route.on?'1':'0');modeChanged();};
 $('rtProf').onchange=e=>{route.profile=e.target.value;route.on=true;lsSet('gpx-prof',route.profile);lsSet('gpx-route','1');modeChanged();};
-$('rtConv').onclick=convertToRoute;
+$('rtConv').onclick=openConvert;
 $('wpList').addEventListener('click',e=>{
   const b=e.target.closest('[data-wp]');
   if(!b) return;
