@@ -680,6 +680,7 @@ svg.leaflet-image-layer.leaflet-interactive path {
 :root{--bg:#eef1f0;--panel:#ffffff;--fg:#14211f;--muted:#586a66;--line:#d2dad7;--accent:#d9480f;--accent-fg:#ffffff;--danger:#c92a2a;--bar:#14211f;--bar-fg:#eef3f1;--chip:#e3e9e7;color-scheme:light}
 @media (prefers-color-scheme:dark){:root{--bg:#0f1917;--panel:#182523;--fg:#e6eeeb;--muted:#9bb0aa;--line:#2a3b38;--accent:#ff8a4c;--accent-fg:#1c0f06;--danger:#ff7676;--bar:#0a1210;--bar-fg:#e6eeeb;--chip:#223330;color-scheme:dark}}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%;margin:0}
 body{height:100dvh;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);font:15px/1.35 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,system-ui,sans-serif;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;overscroll-behavior:none;touch-action:manipulation;-webkit-tap-highlight-color:transparent;overflow:hidden}
 button,select,input{font:inherit;color:inherit}
@@ -777,6 +778,8 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <p>Abre uno o varios archivos GPX, o dibuja un track desde cero sobre el mapa.</p>
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
+    <button class="btn" id="eClose">Cerrar</button>
+    <small style="color:var(--muted)">Versión 5</small>
   </div>
   <div id="toast" role="status"></div>
 </main>
@@ -850,6 +853,7 @@ const LAYERS=[
 
 let S={tracks:[],activeId:null,seq:1};
 const route={on:false,profile:'hiking-mountain',busy:false};
+let emptyOff=false;
 let sel=null,mode='view',dragging=false,suppress=false,tooMany=false,baseId='topo',baseLayer=null,lineRaf=0;
 const undoStack=[],redoStack=[];
 const lineOf=new Map();
@@ -1169,7 +1173,6 @@ function renderSheet(){
   $('rtTog').classList.toggle('on',route.on);
   $('rtTog').setAttribute('aria-pressed',route.on?'true':'false');
   $('rtProf').value=route.profile;
-  $('rtProf').disabled=!route.on;
   const pp=$('ptPanel');
   if(t&&sel!=null&&t.pts[sel]){
     let d=0;
@@ -1178,7 +1181,7 @@ function renderSheet(){
     $('ptInfo').textContent='Punto '+(sel+1)+'/'+t.pts.length+' · km '+(d/1000).toLocaleString('es-ES',{maximumFractionDigits:2})+(p[2]!=null?' · '+Math.round(p[2])+' m':'');
     pp.hidden=false;
   }else pp.hidden=true;
-  $('empty').hidden=S.tracks.length>0;
+  $('empty').hidden=S.tracks.length>0||mode!=='view'||emptyOff;
   $('bUndo').disabled=!undoStack.length;
   $('bRedo').disabled=!redoStack.length;
   renderHint();
@@ -1671,6 +1674,7 @@ if(window.ResizeObserver) new ResizeObserver(()=>map.invalidateSize({pan:false})
 $('bOpen').onclick=()=>$('file').click();
 $('eOpen').onclick=()=>$('file').click();
 $('eNew').onclick=newTrack;
+$('eClose').onclick=()=>{emptyOff=true;renderSheet();};
 $('file').addEventListener('change',async e=>{
   const files=[...e.target.files];
   e.target.value='';
@@ -1678,7 +1682,7 @@ $('file').addEventListener('change',async e=>{
 });
 $('bExport').onclick=openExport;
 $('rtTog').onclick=()=>{route.on=!route.on;lsSet('gpx-route',route.on?'1':'0');renderSheet();};
-$('rtProf').onchange=e=>{route.profile=e.target.value;lsSet('gpx-prof',route.profile);};
+$('rtProf').onchange=e=>{route.profile=e.target.value;route.on=true;lsSet('gpx-prof',route.profile);lsSet('gpx-route','1');renderSheet();};
 $('bUndo').onclick=undo;
 $('bRedo').onclick=redo;
 $('bLayers').onclick=openLayers;

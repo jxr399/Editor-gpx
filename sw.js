@@ -1,11 +1,13 @@
-const APP = 'app-v1';
+const APP = 'app-v2';
 const TILES = 'tiles-v1';
 const HOSTS = ['www.ign.es', 'tile.opentopomap.org', 'a.tile.opentopomap.org', 'b.tile.opentopomap.org', 'c.tile.opentopomap.org', 'tile.openstreetmap.org', 'server.arcgisonline.com'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(APP).then(c => c.addAll(['./', 'index.html'])).then(() => self.skipWaiting()));
 });
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', e => e.waitUntil(
+  caches.keys().then(ks => Promise.all(ks.filter(k => k.startsWith('app-') && k !== APP).map(k => caches.delete(k)))).then(() => self.clients.claim())
+));
 
 self.addEventListener('fetch', e => {
   const r = e.request;
@@ -13,7 +15,7 @@ self.addEventListener('fetch', e => {
   const u = new URL(r.url);
   if (u.origin === location.origin) {
     e.respondWith(
-      fetch(r).then(res => {
+      fetch(new Request(r.url, { cache: 'no-store' })).then(res => {
         const cp = res.clone();
         caches.open(APP).then(c => c.put(r, cp));
         return res;
