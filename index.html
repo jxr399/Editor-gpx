@@ -714,13 +714,21 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
 #bCollapse svg{transition:transform .2s}
 #sheet.min #bCollapse svg{transform:rotate(180deg)}
 #sheet.min #more{display:none}
-#seg{display:grid;grid-template-columns:repeat(3,1fr);background:var(--chip);border-radius:12px;padding:3px;gap:3px}
+#seg{display:grid;grid-template-columns:repeat(4,1fr);background:var(--chip);border-radius:12px;padding:3px;gap:3px}
 #seg button{min-height:40px;border-radius:9px;font-weight:600;color:var(--muted)}
 #seg button.on{background:var(--panel);color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.25)}
-#seg button[data-mode="add"].on,#seg button[data-mode="move"].on{background:var(--accent);color:var(--accent-fg)}
+#seg button[data-mode="add"].on,#seg button[data-mode="move"].on,#seg button[data-mode="route"].on{background:var(--accent);color:var(--accent-fg)}
 #slot{min-height:44px;display:flex;flex-direction:column;justify-content:center;gap:4px}
 #routeBar{display:flex;gap:6px;align-items:center}
 #rtProf{min-height:38px;border-radius:19px;border:0;background:var(--chip);padding:0 12px;font-weight:600;font-size:14px;max-width:60%}
+#rtPanel{display:flex;align-items:center;gap:6px;overflow-x:auto;width:100%;scrollbar-width:none}
+#rtPanel::-webkit-scrollbar{display:none}
+.wpm{background:none;border:0}
+.wpm i{display:grid;place-items:center;width:28px;height:28px;margin:4px;border-radius:50%;background:#d9480f;color:#fff;font:700 13px/1 -apple-system,system-ui,sans-serif;font-style:normal;border:3px solid #fff;box-shadow:0 0 0 1.5px rgba(0,0,0,.45)}
+.wpm.last i{background:#e03131}
+.wpm.first i{background:#2f9e44}
+.wpm.last.first i{background:#2f9e44}
+.wpm.on i{outline:3px solid #14211f;outline-offset:1px}
 #rtTog.on{background:var(--accent);color:var(--accent-fg)}
 #hint{margin:0;color:var(--muted);font-size:13px;line-height:1.3}
 #ptPanel{display:flex;align-items:center;gap:6px;overflow-x:auto;width:100%;scrollbar-width:none}
@@ -783,7 +791,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button class="btn pri" id="eOpen">Abrir GPX</button>
     <button class="btn" id="eNew">Nuevo track</button>
     <button class="btn" id="eClose">Cerrar</button>
-    <small style="color:var(--muted)">Versión 7</small>
+    <small style="color:var(--muted)">Versión 8</small>
   </div>
   <div id="toast" role="status"></div>
 </main>
@@ -796,6 +804,7 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
     <button data-mode="view" class="on">Ver</button>
     <button data-mode="move">Mover</button>
     <button data-mode="add">Añadir</button>
+    <button data-mode="route">Ruta</button>
   </div>
   <div id="slot">
     <div id="routeBar" hidden>
@@ -808,6 +817,15 @@ svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-l
         <option value="fastbike">Bici de carretera</option>
         <option value="shortest">Camino más corto</option>
       </select>
+      <button class="pill" id="rtConv" hidden>Convertir a ruta</button>
+      <button class="pill" id="rtRecalc" hidden>Recalcular</button>
+    </div>
+    <div id="rtPanel" hidden>
+      <span id="rtInfo" style="font-size:13px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;padding-right:4px"></span>
+      <button class="pill" data-rt="up">Subir (antes)</button>
+      <button class="pill" data-rt="down">Bajar (después)</button>
+      <button class="pill danger" data-rt="del">Borrar</button>
+      <button class="pill" data-rt="off">Cerrar</button>
     </div>
     <p id="hint"></p>
     <div id="ptPanel" hidden>
@@ -857,7 +875,7 @@ const LAYERS=[
 ];
 
 let S={tracks:[],activeId:null,seq:1};
-const route={on:false,profile:'hiking-mountain',busy:false};
+const route={on:true,profile:'hiking-mountain'};
 let emptyOff=false;
 let sel=null,mode='view',dragging=false,suppress=false,tooMany=false,baseId='topo',baseLayer=null,lineRaf=0;
 const undoStack=[],redoStack=[];
@@ -957,9 +975,9 @@ function reversePts(pts){
   return r;
 }
 
-function simplifyPts(pts,tol){
+function simplifyIdx(pts,tol){
   const n=pts.length;
-  if(n<3) return pts.slice();
+  if(n<3) return pts.map((_,i)=>i);
   let latSum=0;
   for(const p of pts) latSum+=p[0];
   const kx=111320*Math.cos(latSum/n*Math.PI/180),ky=110540;
@@ -984,8 +1002,11 @@ function simplifyPts(pts,tol){
     }
     if(mi>0&&md>tol){keep[mi]=1;stack.push([s,mi],[mi,e]);}
   }
-  return pts.filter((_,i)=>keep[i]);
+  const out=[];
+  for(let i=0;i<n;i++) if(keep[i]) out.push(i);
+  return out;
 }
+function simplifyPts(pts,tol){return simplifyIdx(pts,tol).map(i=>pts[i]);}
 
 function mergeOptions(A,B){
   const s=t=>t.pts[0],e=t=>t.pts[t.pts.length-1];
@@ -1026,12 +1047,14 @@ function undo(){
   redoStack.push(JSON.stringify(S));
   S=JSON.parse(undoStack.pop());
   sel=null;renderAll();save();
+  {const t=activeTrack();if(t&&t.wp) ensureRoutes(t.id);}
 }
 function redo(){
   if(!redoStack.length) return;
   undoStack.push(JSON.stringify(S));
   S=JSON.parse(redoStack.pop());
   sel=null;renderAll();save();
+  {const t=activeTrack();if(t&&t.wp) ensureRoutes(t.id);}
 }
 function commit(fn){
   pushHistory();
@@ -1075,7 +1098,7 @@ function renderTracks(){
       if(isA) casing=L.polyline(ll,{renderer:rend,color:'#ffffff',weight:9,opacity:.95,interactive:false,lineJoin:'round'}).addTo(gTracks);
       const line=L.polyline(ll,{renderer:rend,color:t.color,weight:isA?5:4,opacity:isA?1:.8,lineJoin:'round'}).addTo(gTracks);
       if(!isA) line.on('click',()=>{
-        if(mode==='add') return;
+        if(mode==='add'||mode==='route') return;
         suppress=true;setTimeout(()=>{suppress=false;},0);
         setActive(t.id);
       });
@@ -1106,7 +1129,7 @@ function makeHandle(t,i){
   const p=t.pts[i];
   const m=L.marker([p[0],p[1]],{draggable:true,keyboard:false,icon:L.divIcon({className:'hd'+(i===sel?' on':''),html:'<i></i>',iconSize:[36,36],iconAnchor:[18,18]})});
   m.on('click',()=>setTimeout(()=>selectPoint(i),0));
-  m.on('dragstart',()=>{dragging=true;pushHistory();});
+  m.on('dragstart',()=>{dragging=true;pushHistory();plain(t);});
   m.on('drag',ev=>{const ll=ev.target.getLatLng();p[0]=ll.lat;p[1]=ll.lng;scheduleLine(t);});
   m.on('dragend',()=>{
     dragging=false;sel=i;
@@ -1127,12 +1150,34 @@ function renderHandles(){
       if(p[0]>=s&&p[0]<=n&&p[1]>=w&&p[1]<=e){idx.push(i);if(idx.length>MAXH){tooMany=true;break;}}
     }
     if(!tooMany) for(const i of idx) gHandles.addLayer(makeHandle(t,i));
+  }else if(t&&t.visible&&mode==='route'&&t.wp){
+    t.wp.forEach((p,i)=>gHandles.addLayer(makeWpHandle(t,i)));
   }
   renderHint();
 }
 
+function makeWpHandle(t,i){
+  const p=t.wp[i],n=t.wp.length;
+  const cls='wpm'+(i===0?' first':'')+(i===n-1?' last':'')+(i===sel?' on':'');
+  const m=L.marker([p[0],p[1]],{draggable:true,keyboard:false,zIndexOffset:1000,icon:L.divIcon({className:cls,html:'<i>'+(i+1)+'</i>',iconSize:[36,36],iconAnchor:[18,18]})});
+  m.on('click',()=>setTimeout(()=>selectPoint(i),0));
+  m.on('dragstart',()=>{dragging=true;pushHistory();});
+  m.on('dragend',ev=>{
+    const ll=ev.target.getLatLng();
+    dragging=false;
+    setTimeout(()=>{
+      const cur=activeTrack();
+      if(!cur||!cur.wp||!cur.wp[i]) return;
+      cur.wp[i]=[ll.lat,ll.lng];sel=i;
+      refresh(cur);renderAll();save();ensureRoutes(cur.id);
+    },0);
+  });
+  return m;
+}
+
 function renderRing(){
   gSel.clearLayers();
+  if(mode==='route') return;
   const t=activeTrack();
   if(!t||sel==null||!t.pts[sel]) return;
   const p=t.pts[sel];
@@ -1149,10 +1194,13 @@ function renderHint(){
   const h=$('hint'),t=activeTrack();
   let s='';
   if(sel!=null) s='';
-  else if(!t) s='Abre un GPX o crea un track nuevo.';
-  else if(mode==='view') s='Toca un track para elegirlo. Pasa a Mover o Añadir para editar.';
+  else if(!t&&mode!=='route') s='Abre un GPX o crea un track nuevo.';
+  else if(mode==='view') s='Toca un track para elegirlo. Pasa a Mover, Añadir o Ruta para editar.';
   else if(mode==='move') s=tooMany?'Hay demasiados puntos a la vista: acerca el mapa para arrastrarlos, o toca la línea para elegir un punto.':'Arrastra un punto, o tócalo para elegirlo.';
-  else if(route.on) s='Toca el mapa: la ruta sigue caminos desde el último punto del track (necesita conexión).';
+  else if(mode==='route'){
+    if(t&&t.pts.length&&!t.wp) s='Este track viene de un GPX. Pulsa «Convertir a ruta» para editarlo con puntos de paso.';
+    else s='Toca el mapa para añadir puntos de paso. Toca un punto para subirlo, bajarlo o borrarlo; arrástralo para moverlo.';
+  }
   else s='Toca el mapa: cerca de la línea inserta un punto; lejos, lo añade en el extremo más cercano.';
   h.textContent=s;h.hidden=!s;
 }
@@ -1173,13 +1221,23 @@ function renderSheet(){
     const a=b.dataset.act;
     b.disabled=a!=='new'&&a!=='open'&&!t||(a==='merge'&&S.tracks.length<2);
   }
-  $('routeBar').hidden=mode!=='add';
+  $('routeBar').hidden=mode!=='route';
+  const rt=activeTrack();
+  $('rtConv').hidden=!(rt&&rt.pts.length>1&&!rt.wp);
+  $('rtRecalc').hidden=!(rt&&rt.wp&&rt.wp.length>1);
+  const rp=$('rtPanel');
+  if(mode==='route'&&sel!=null&&rt&&rt.wp&&rt.wp[sel]){
+    let d=0;
+    for(let i=1;i<=sel;i++) d+=hav(rt.wp[i-1],rt.wp[i]);
+    $('rtInfo').textContent='Punto '+(sel+1)+' de '+rt.wp.length;
+    rp.hidden=false;
+  }else rp.hidden=true;
   $('rtTog').textContent='Seguir caminos: '+(route.on?'Sí':'No');
   $('rtTog').classList.toggle('on',route.on);
   $('rtTog').setAttribute('aria-pressed',route.on?'true':'false');
   $('rtProf').value=route.profile;
   const pp=$('ptPanel');
-  if(t&&sel!=null&&t.pts[sel]){
+  if(mode!=='route'&&t&&sel!=null&&t.pts[sel]){
     let d=0;
     for(let i=1;i<=sel;i++) d+=hav(t.pts[i-1],t.pts[i]);
     const p=t.pts[sel];
@@ -1194,7 +1252,7 @@ function renderSheet(){
 
 function setMode(m){
   mode=m;sel=null;
-  if(m==='add') map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
+  if(m==='add'||m==='route') map.doubleClickZoom.disable(); else map.doubleClickZoom.enable();
   renderHandles();renderRing();renderSheet();
 }
 function setActive(id){
@@ -1225,6 +1283,7 @@ function addPointAt(ll){
   commit(()=>{
     let t=activeTrack();
     if(!t){t=makeTrack('Track nuevo');S.tracks.push(t);S.activeId=t.id;}
+    plain(t);
     const np=[ll.lat,ll.lng,null,null],n=t.pts.length;
     if(n<2){t.pts.push(np);return;}
     const cp=map.latLngToContainerPoint(ll);
@@ -1260,36 +1319,166 @@ async function routeSeg(a,b,profile){
     return c.map(q=>[q[1],q[0],q.length>2&&isFinite(+q[2])?+q[2]:null,null]);
   }finally{clearTimeout(to);}
 }
-async function addRouted(ll){
-  const t=activeTrack();
-  if(!t||!t.pts.length){addPointAt(ll);return;}
-  const id=t.id,last=t.pts[t.pts.length-1];
-  route.busy=true;
-  toast('Calculando ruta…');
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const curMode=()=>route.on?route.profile:'straight';
+const abKey=(t,i)=>t.wp[i][0]+','+t.wp[i][1]+'>'+t.wp[i+1][0]+','+t.wp[i+1][1];
+const segOk=(t,i)=>{const s=t.segs[i];return !!s&&s.ab===abKey(t,i)&&(s.mode==='orig'||s.mode===curMode());};
+const straightPts=(t,i)=>[[t.wp[i][0],t.wp[i][1],null,null],[t.wp[i+1][0],t.wp[i+1][1],null,null]];
+function plain(t){if(t){t.wp=null;t.segs=null;}}
+function rebuild(t){
+  let pts=[];
+  for(const s of t.segs){
+    const part=s.pts;
+    if(pts.length&&part.length&&hav(pts[pts.length-1],part[0])<0.5) pts=pts.concat(part.slice(1));
+    else pts=pts.concat(part);
+  }
+  if(!pts.length&&t.wp&&t.wp.length===1) pts=[[t.wp[0][0],t.wp[0][1],null,null]];
+  t.pts=pts;
+}
+function refresh(t){
+  const old=new Map();
+  for(const s of (t.segs||[])) old.set(s.ab+'|'+s.mode,s);
+  const segs=[];
+  for(let i=0;i<t.wp.length-1;i++){
+    const ab=abKey(t,i);
+    const s=old.get(ab+'|'+curMode())||old.get(ab+'|orig')||{ab,mode:'',pts:straightPts(t,i)};
+    segs.push(s);
+  }
+  t.segs=segs;
+  rebuild(t);
+}
+let routing=false,routeAgain=false;
+async function ensureRoutes(tid){
+  const get=()=>S.tracks.find(x=>x.id===tid);
+  if(routing){routeAgain=true;return;}
+  routing=true;
+  let notified=false,errs=0,changed=false;
   try{
-    const seg=await routeSeg(last,[ll.lat,ll.lng],route.profile);
-    seg.shift();
-    if(!seg.length) throw new Error('el punto está en el mismo sitio');
-    const cur=activeTrack();
-    if(!cur||cur.id!==id) return;
-    commit(()=>{cur.pts=cur.pts.concat(seg);});
-    toast('Ruta añadida: '+seg.length+' puntos');
-  }catch(e){
-    toast('No se pudo calcular la ruta ('+(e&&e.name==='AbortError'?'tiempo agotado':e.message)+'). Desactiva Seguir caminos para línea recta.');
-  }finally{route.busy=false;}
+    do{
+      routeAgain=false;
+      for(let i=0;;i++){
+        const t=get();
+        if(!t||!t.wp||i>=t.segs.length) break;
+        if(segOk(t,i)) continue;
+        const ab=abKey(t,i),mode=curMode();
+        const a=[t.wp[i][0],t.wp[i][1]],b=[t.wp[i+1][0],t.wp[i+1][1]];
+        let pts,err=false;
+        if(mode==='straight') pts=straightPts(t,i);
+        else{
+          if(!notified){toast('Calculando ruta…');notified=true;}
+          try{
+            pts=await routeSeg(a,b,mode);
+            if(pts.length<2) throw new Error('vacío');
+            pts[0][0]=a[0];pts[0][1]=a[1];
+            pts[pts.length-1][0]=b[0];pts[pts.length-1][1]=b[1];
+          }catch(e){err=true;errs++;pts=straightPts(t,i);}
+          await sleep(120);
+        }
+        const t2=get();
+        if(!t2||!t2.wp||i>=t2.segs.length||abKey(t2,i)!==ab||curMode()!==mode){routeAgain=true;continue;}
+        t2.segs[i]={ab,mode,pts,err};
+        rebuild(t2);changed=true;
+        renderTracks();renderSheet();
+      }
+    }while(routeAgain);
+    if(errs) toast('Sin ruta en '+errs+(errs===1?' tramo':' tramos')+': queda línea recta. Pulsa Recalcular para reintentar.');
+    else if(notified) toast('Ruta lista');
+    if(changed) save();
+  }finally{routing=false;}
+}
+function commitRoute(fn){
+  pushHistory();
+  const t=fn();
+  if(t) refresh(t);
+  renderAll();save();
+  if(t) ensureRoutes(t.id);
+}
+function nearestSeg(t,ll){
+  const cp=map.latLngToContainerPoint(ll);
+  let bi=-1,bd=Infinity;
+  for(let i=0;i<t.segs.length;i++){
+    const q=t.segs[i].pts.map(p=>map.latLngToContainerPoint([p[0],p[1]]));
+    for(let j=0;j<q.length-1;j++){
+      const d=L.LineUtil.pointToSegmentDistance(cp,q[j],q[j+1]);
+      if(d<bd){bd=d;bi=i;}
+    }
+  }
+  return {i:bi,d:bd};
+}
+function addWaypoint(ll){
+  let t=activeTrack();
+  if(t&&t.pts.length&&!t.wp){toast('Este track viene de un GPX. Pulsa «Convertir a ruta» para editarlo con puntos de paso.');return;}
+  commitRoute(()=>{
+    if(!t){t=makeTrack('Ruta nueva');S.tracks.push(t);S.activeId=t.id;}
+    if(!t.wp){t.wp=[];t.segs=[];}
+    sel=null;
+    const p=[ll.lat,ll.lng];
+    if(t.wp.length>=2){
+      const n=nearestSeg(t,ll);
+      if(n.i>=0&&n.d<=28){t.wp.splice(n.i+1,0,p);return t;}
+    }
+    t.wp.push(p);
+    return t;
+  });
+}
+function routeAction(a){
+  const t=activeTrack(),i=sel;
+  if(!t||!t.wp||i==null||!t.wp[i]) return;
+  if(a==='off'){sel=null;renderHandles();renderSheet();return;}
+  if(a==='up'&&i===0){toast('Ya es el primer punto');return;}
+  if(a==='down'&&i===t.wp.length-1){toast('Ya es el último punto');return;}
+  commitRoute(()=>{
+    if(a==='up'){const x=t.wp[i];t.wp[i]=t.wp[i-1];t.wp[i-1]=x;sel=i-1;}
+    else if(a==='down'){const x=t.wp[i];t.wp[i]=t.wp[i+1];t.wp[i+1]=x;sel=i+1;}
+    else if(a==='del'){t.wp.splice(i,1);sel=null;}
+    return t;
+  });
+}
+function convertToRoute(){
+  const t=activeTrack();
+  if(!t||t.wp||t.pts.length<2) return;
+  let tol=2,idx=simplifyIdx(t.pts,tol);
+  while(idx.length>40&&tol<5000){tol*=1.6;idx=simplifyIdx(t.pts,tol);}
+  commit(()=>{
+    t.wp=idx.map(i=>[t.pts[i][0],t.pts[i][1]]);
+    t.segs=[];
+    for(let k=0;k<idx.length-1;k++){
+      t.segs.push({ab:'',mode:'orig',pts:t.pts.slice(idx[k],idx[k+1]+1)});
+      t.segs[k].ab=abKey(t,k);
+    }
+    rebuild(t);
+  });
+  toast('Convertido en '+idx.length+' puntos de ruta. Arrástralos o cámbialos de orden.');
+}
+function reverseTrack(t){
+  if(!t) return;
+  commit(()=>{
+    if(t.wp){
+      t.wp.reverse();
+      t.segs=t.segs.reverse().map(s=>({ab:'',mode:s.mode,pts:reversePts(s.pts),err:s.err}));
+      for(let i=0;i<t.segs.length;i++) t.segs[i].ab=abKey(t,i);
+      rebuild(t);
+    }else t.pts=reversePts(t.pts);
+  });
+}
+function modeChanged(){
+  const t=activeTrack();
+  if(t&&t.wp&&t.wp.length>1){for(const s of t.segs) s.mode='';ensureRoutes(t.id);}
+  renderSheet();
 }
 
 function deletePoint(){
   const t=activeTrack();
   if(!t||sel==null) return;
   const i=sel;
-  commit(()=>{t.pts.splice(i,1);});
+  commit(()=>{plain(t);t.pts.splice(i,1);});
 }
 function splitAtPoint(){
   const t=activeTrack(),i=sel;
   if(!t||i==null) return;
   if(i<=0||i>=t.pts.length-1){toast('Elige un punto intermedio para dividir');return;}
   commit(()=>{
+    plain(t);
     const b=makeTrack(t.name+' (2)',t.pts.slice(i).map(p=>p.slice()));
     t.pts=t.pts.slice(0,i+1);
     t.name=t.name+' (1)';
@@ -1300,13 +1489,13 @@ function trimBefore(){
   const t=activeTrack(),i=sel;
   if(!t||i==null) return;
   if(i===0){toast('No hay puntos antes');return;}
-  commit(()=>{t.pts=t.pts.slice(i);});
+  commit(()=>{plain(t);t.pts=t.pts.slice(i);});
 }
 function trimAfter(){
   const t=activeTrack(),i=sel;
   if(!t||i==null) return;
   if(i>=t.pts.length-1){toast('No hay puntos después');return;}
-  commit(()=>{t.pts=t.pts.slice(0,i+1);});
+  commit(()=>{plain(t);t.pts=t.pts.slice(0,i+1);});
 }
 
 let toastT=0;
@@ -1402,7 +1591,7 @@ function openSimplify(){
       {label:'Cancelar'},
       {label:'Simplificar',cls:'pri',run:ov=>{
         const tol=+ov.querySelector('#spR').value;
-        commit(()=>{t.pts=simplifyPts(t.pts,tol);});
+        commit(()=>{plain(t);t.pts=simplifyPts(t.pts,tol);});
       }}
     ]
   });
@@ -1455,6 +1644,7 @@ function duplicateTrack(){
   commit(()=>{
     const c=makeTrack(t.name+' (copia)',t.pts.map(p=>p.slice()));
     c.wpts=t.wpts.map(w=>Object.assign({},w));
+    if(t.wp){c.wp=JSON.parse(JSON.stringify(t.wp));c.segs=JSON.parse(JSON.stringify(t.segs));}
     S.tracks.splice(S.tracks.indexOf(t)+1,0,c);
     S.activeId=c.id;
   });
@@ -1717,11 +1907,8 @@ function locate(){
 
 map.on('click',e=>{
   if(suppress){suppress=false;return;}
-  if(mode==='add'){
-    if(route.on){if(!route.busy) addRouted(e.latlng);}
-    else addPointAt(e.latlng);
-    return;
-  }
+  if(mode==='add'){addPointAt(e.latlng);return;}
+  if(mode==='route'){addWaypoint(e.latlng);return;}
   if(mode==='move'){
     const t=activeTrack();
     if(!t) return;
@@ -1751,8 +1938,11 @@ $('file').addEventListener('change',async e=>{
   if(files.length) await importFiles(files);
 });
 $('bExport').onclick=openExport;
-$('rtTog').onclick=()=>{route.on=!route.on;lsSet('gpx-route',route.on?'1':'0');renderSheet();};
-$('rtProf').onchange=e=>{route.profile=e.target.value;route.on=true;lsSet('gpx-prof',route.profile);lsSet('gpx-route','1');renderSheet();};
+$('rtTog').onclick=()=>{route.on=!route.on;lsSet('gpx-route',route.on?'1':'0');modeChanged();};
+$('rtProf').onchange=e=>{route.profile=e.target.value;route.on=true;lsSet('gpx-prof',route.profile);lsSet('gpx-route','1');modeChanged();};
+$('rtConv').onclick=convertToRoute;
+$('rtRecalc').onclick=modeChanged;
+$('rtPanel').addEventListener('click',e=>{const b=e.target.closest('[data-rt]');if(b) routeAction(b.dataset.rt);});
 $('bUndo').onclick=undo;
 $('bRedo').onclick=redo;
 $('bLayers').onclick=openLayers;
@@ -1779,7 +1969,7 @@ $('acts').addEventListener('click',e=>{
   switch(b.dataset.act){
     case 'open':$('file').click();break;
     case 'merge':openMerge();break;
-    case 'reverse':if(t) commit(()=>{t.pts=reversePts(t.pts);});break;
+    case 'reverse':reverseTrack(t);break;
     case 'simplify':openSimplify();break;
     case 'rename':openRename();break;
     case 'color':cycleColor();break;
@@ -1802,7 +1992,7 @@ $('ptPanel').addEventListener('click',e=>{
 document.addEventListener('visibilitychange',()=>{if(document.hidden) saveNow();});
 
 async function boot(){
-  route.on=lsGet('gpx-route')==='1';
+  route.on=lsGet('gpx-route')!=='0';
   route.profile=lsGet('gpx-prof')||'hiking-mountain';
   if('serviceWorker' in navigator&&location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(()=>{});
   setBase(lsGet('gpx-base')||'topo');
